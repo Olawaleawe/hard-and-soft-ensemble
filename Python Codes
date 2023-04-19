@@ -1,0 +1,666 @@
+
+ # Anaemia Diagnosis Based on Hard and Soft Voting Ensemble Machine Learning Classifiers
+
+# In[1]:
+#importing some necessary libraries
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+import seaborn as sns
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.svm import SVC
+from sklearn.ensemble import ExtraTreesClassifier
+from sklearn.metrics import confusion_matrix
+from sklearn.tree import DecisionTreeClassifier
+from sklearn.metrics import accuracy_score
+from sklearn.ensemble import RandomForestClassifier, BaggingClassifier, AdaBoostClassifier, GradientBoostingClassifier
+from sklearn.svm import SVC
+from catboost import CatBoostClassifier
+from sklearn.naive_bayes import GaussianNB, BernoulliNB
+from sklearn.neighbors import KNeighborsClassifier
+from sklearn.linear_model import LogisticRegression
+import warnings
+warnings.filterwarnings("ignore")
+from sklearn.preprocessing import StandardScaler
+from sklearn.metrics import f1_score
+from sklearn.metrics import roc_curve, roc_auc_score
+from sklearn.metrics import recall_score, ConfusionMatrixDisplay
+from sklearn.metrics import matthews_corrcoef
+from sklearn.metrics import balanced_accuracy_score
+from sklearn.metrics import precision_score
+from sklearn.metrics import cohen_kappa_score
+from sklearn.naive_bayes import GaussianNB
+
+# In[2]:
+#importing the dataset
+df = pd.read_csv("cleaned_SANHANES 15_17.csv")
+
+# In[3]:
+#checking the dimension of the dataset
+df.shape
+
+# In[4]:
+df.describe()
+
+# In[5]:
+#general information of the dataset
+df.info()
+
+# In[6]:
+#checking for null values
+df.isna().sum()
+
+# In[7]:
+#To check our target variable
+ax = df["anemia_bin"].value_counts(normalize=True).mul(100).plot.bar()
+for p in ax.patches:
+    y = p.get_height()
+    x = p.get_x() + p.get_width() / 2
+    # Label of bar height
+    label = "{:.1f}%".format(y)
+    # Annotate plot
+    ax.annotate(label, xy=(x, y), xytext=(0, 5), textcoords="offset points", ha="center", fontsize=14)
+# Remove y axis
+ax.get_yaxis().set_visible(False)
+# The above indicates an imbalanced dataset
+
+# In[8]:
+# Create the figure and subplots
+fig, axs = plt.subplots(11, 4, figsize=(15, 30))
+# Flatten the axs array to make it easier to iterate through
+axs = axs.flatten()
+# Loop through each feature and plot a histogram in a separate subplot
+for i, col in enumerate(df.columns):
+    axs[i].boxplot(df[col]) #density = True, bins=10)
+    axs[i].set_title(col)
+# Hide any unused subplots
+for i in range(len(df.columns), 11 * 4):
+    axs[i].axis('off')
+# Add a main title and adjust the spacing between subplots
+#plt.suptitle('Histograms for Multiple Features')
+plt.subplots_adjust(hspace=0.6, wspace=0.6)
+#fig.suptitle("Histogram for the features", fontsize = 30)
+# Show the plot
+plt.show()
+
+# In[9]:
+# Create the figure and subplots
+fig, axs = plt.subplots(11, 4, figsize=(15, 30))
+# Flatten the axs array to make it easier to iterate through
+axs = axs.flatten()
+# Loop through each feature and plot a histogram in a separate subplot
+for i, col in enumerate(df.columns):
+    axs[i].hist(df[col], density = True, bins=10)
+    axs[i].set_title(col)
+# Hide any unused subplots
+for i in range(len(df.columns), 11 * 4):
+    axs[i].axis('off')
+# Add a main title and adjust the spacing between subplots
+#plt.suptitle('Histograms for Multiple Features')
+plt.subplots_adjust(hspace=0.6, wspace=0.6)
+#fig.suptitle("Histogram for the features", fontsize = 30)
+# Show the plot
+plt.show()
+
+# In[10]:
+#Let's find the correlation between the independent and the dependent feature
+df.corr()['anemia_bin'].sort_values().plot(kind='bar', figsize=(18, 6))
+
+# # Modelling
+# In[11]:
+X = df.drop(["anemia_bin"], axis = 1)
+y = df["anemia_bin"]
+
+# In[12]:
+from imblearn.over_sampling import SMOTE
+sm = SMOTE(random_state=42)
+X, y = sm.fit_resample(X, y)
+
+# In[13]:
+from sklearn.model_selection import train_test_split
+X_train,X_test,y_train,y_test = train_test_split(X,y,random_state=42,stratify=y, test_size = 0.3)
+
+# In[14]:
+from sklearn.feature_selection import RFE
+rfe_method = RFE(RandomForestClassifier(random_state=10), n_features_to_select = 25, step = 3)
+rfe_method.fit(X_train, y_train)
+
+# In[15]:
+new_cols = X_train.columns[(rfe_method.get_support())]
+new_cols
+
+# In[16]:
+X_train = X_train[new_cols]
+X_test = X_test[new_cols]
+X_train.head()
+print(X_test.shape)
+
+# In[17]:
+y_train.shape
+
+# In[18]:
+scaler = StandardScaler()
+X_train = scaler.fit_transform(X_train)
+X_test = scaler.transform(X_test)
+
+
+# # First Set of Models
+# In[19]:
+#Evaluation Metrics
+f1_scores = []
+cohen_kappa = []
+balanced_acc = []
+MCC = []
+Precision = []
+sensitivity = []
+specificity = []
+
+# In[20]:
+# initialize a list to store the models
+models = [DecisionTreeClassifier(random_state = 123), 
+          SVC(random_state = 123, probability = True),
+          KNeighborsClassifier(), 
+          LogisticRegression(random_state = 123),
+         GaussianNB()]
+# train and evaluate each model using a for loop
+for i, model in enumerate(models):
+    # fit the model on the training data
+    model.fit(X_train, y_train)
+    # make predictions on the test data
+    y_pred = model.predict(X_test)
+    # calculate the accuracy and F1 score of the model
+    #accuracy = accuracy_score(y_test, y_pred).round(3)
+    f1 = f1_score(y_test, y_pred).round(4)
+    mcc = matthews_corrcoef(y_test, y_pred).round(4)
+    bal_acc = balanced_accuracy_score(y_test, y_pred).round(4)
+    kappa = cohen_kappa_score(y_test, y_pred).round(4)
+    precision = precision_score(y_test, y_pred).round(4)
+    recall = recall_score(y_test, y_pred).round(4)
+    tn_f, fp_f, fn_f, tp_f = confusion_matrix(y_test, y_pred).ravel()
+    # Compute sensitivity and specificity
+    sensit = tp_f / (tp_f + fn_f)
+    specif = tn_f / (tn_f + fp_f)
+    
+    # append the results to the lists
+    f1_scores.append(f1)
+    cohen_kappa.append(kappa)
+    balanced_acc.append(bal_acc)
+    MCC.append(mcc)
+    Precision.append(precision)
+    sensitivity.append(sensit)
+    specificity.append(specif)
+
+# In[21]:
+#Confusion Matrix
+from sklearn.metrics import ConfusionMatrixDisplay
+cm_fir = confusion_matrix(y_test, y_pred)
+sns.heatmap(cm_fir, annot=True)
+plt.ylabel ("True Label")
+plt.xlabel ("Predicted Label")
+
+# In[22]:
+# create a dataframe to store the results
+results_df = pd.DataFrame({'Model': ['DT', 'SVM', 'KNN', 'LR', 'GNB'],
+                           'F1 Score': f1_scores,
+                         'Cohen kappa': cohen_kappa,
+                        'Balanced Acc': balanced_acc,
+                        'MCC' : MCC,
+                        'Precision': Precision,
+                        'Sensitivity': sensitivity, 'Specificity': specificity})
+# print the dataframe
+print(results_df.sort_values(by="Balanced Acc", ascending=False))
+
+# In[23]:
+results_df.to_csv("General Result for the First Set of Models.csv")
+
+# In[24]:
+corr_res = results_df.corr()
+corr_res
+corr_res.to_csv("Correlation between the metrics.csv")
+
+# In[25]:
+corr_res
+
+# In[26]:
+#Let's find the correlation between the independent and the dependent feature
+df.corr()['anemia_bin'].sort_values().plot(kind='bar', figsize=(18, 6))
+
+# # Hard and Soft Classifier for the First Set of Models
+# Hard Classifier
+# In[27]:
+from sklearn.ensemble import VotingClassifier
+#create a voting classifier with hard voting
+voting_classifier_hard = VotingClassifier(
+                        estimators =[('dtc', DecisionTreeClassifier(random_state = 123)),
+                                    ('svm', SVC(random_state = 123,  probability = True)),
+                                    ('knn', KNeighborsClassifier()),
+                                    ('lr', LogisticRegression(random_state = 123)),
+                                    ('gnb', GaussianNB())],
+                        voting ='hard', weights = [1,2,0.5,1,0.2])
+#make predictions with the hard voting model
+voting_classifier_hard.fit(X_train, y_train)
+y_pred_vch = voting_classifier_hard.predict(X_test)
+# Compute sensitivity and specificity
+tn_h, fp_h, fn_h, tp_h = confusion_matrix(y_test, y_pred_vch).ravel()
+sensit_h = tp_h / (tp_h + fn_h)
+specif_h = tn_h / (tn_h + fp_h)
+# evaluate the voting classifiers
+f1_vch = f1_score(y_test, y_pred_vch)
+mcc_vch = matthews_corrcoef(y_test, y_pred_vch)
+bal_acc_vch = balanced_accuracy_score(y_test, y_pred_vch)
+kappa_vch = cohen_kappa_score(y_test, y_pred_vch)
+precision_vch = precision_score(y_test, y_pred_vch)
+
+# In[28]:
+hard_voting_result = pd.DataFrame({
+                           'F1 Score': f1_vch,
+                         'Cohen kappa': kappa_vch,
+                        'Balanced Acc': bal_acc_vch,
+                        'MCC' : mcc_vch,
+                        'Precision': precision_vch, 'Sensitivity': sensit_h,
+                        'Specificity': specif_h}, index = ['Hard Voting'])
+hard_voting_result
+
+# In[29]:
+#Confusion Matrix
+from sklearn.metrics import ConfusionMatrixDisplay
+cm_hard = confusion_matrix(y_test, y_pred_vch)
+sns.heatmap(cm_hard, annot=True)
+plt.ylabel ("True Label")
+plt.xlabel ("Predicted Label")
+
+# In[30]:
+# Create a line plot
+fig, ax = plt.subplots(figsize=(10, 4))
+ax = plt.plot(hard_voting_result.T)
+# Add labels and title
+plt.xlabel('Evaluation_Metrics')
+plt.ylabel('Scores')
+plt.title('Model Performance Metrics for Hard VC for the First Set')
+# Show the plot
+plt.show()
+
+# Soft Classifier
+# In[31]:
+from sklearn.ensemble import VotingClassifier
+#create a voting classifier with soft voting
+voting_classifier_soft = VotingClassifier(
+                        estimators =[('dtc', DecisionTreeClassifier(random_state = 123)),
+                                    ('svm', SVC(random_state = 123, probability = True)),
+                                    ('knn', KNeighborsClassifier()),
+                                    ('lr', LogisticRegression(random_state = 123)),
+                                    ('gnb', GaussianNB())],
+                        voting ='soft', weights = [1,2,0.5,1,0.2])
+
+#make predictions with the soft voting model
+voting_classifier_soft.fit(X_train, y_train)
+y_pred_vcs = voting_classifier_soft.predict(X_test)
+# Compute sensitivity and specificity
+tn_s, fp_s, fn_s, tp_s = confusion_matrix(y_test, y_pred_vcs).ravel()
+sensit_s = tp_s / (tp_s + fn_s)
+specif_s = tn_s / (tn_s + fp_s)
+# evaluate the voting classifier
+f1_vcs = f1_score(y_test, y_pred_vcs)
+mcc_vcs = matthews_corrcoef(y_test, y_pred_vcs)
+bal_acc_vcs = balanced_accuracy_score(y_test, y_pred_vcs)
+kappa_vcs = cohen_kappa_score(y_test, y_pred_vcs)
+precision_vcs = precision_score(y_test, y_pred_vcs)
+# In[32]:
+#name_s = ['Soft Voting (DT, SVM, KNN, LR, GNB)']
+soft_voting_result = pd.DataFrame({#'Model': name_s,
+                           'F1 Score': f1_vcs,
+                         'Cohen kappa': kappa_vcs,
+                        'Balanced Acc': bal_acc_vcs,
+                        'MCC' : mcc_vcs,
+                        'Precision': precision_vcs,
+                        'Sensitivity': sensit_s, 
+                        'Specificity': specif_s}, index = ['Soft Voting'])
+#soft_voting_result.reset_index(drop = True)
+soft_voting_result
+
+# In[33]:
+#Confusion Matrix
+from sklearn.metrics import ConfusionMatrixDisplay
+cm_soft = confusion_matrix(y_test, y_pred_vcs)
+sns.heatmap(cm_soft, annot=True)
+plt.ylabel ("True Label")
+plt.xlabel ("Predicted Label")
+plt.show()
+
+
+
+# In[34]:
+# Create a line plot
+fig, ax = plt.subplots(figsize=(12, 4))
+ax = plt.plot(soft_voting_result.T)
+# Add labels and title
+plt.xlabel('Evaluation Metrics')
+plt.ylabel('Scores')
+plt.title('Model Performance Metrics for Soft VC for the First Set')
+# Show the plot
+plt.show()
+
+# In[35]:
+com_results_fir = pd.concat([soft_voting_result, hard_voting_result])
+com_results_fir
+
+# In[36]:
+com_results_fir.to_csv("Voting for the First Models.csv")
+
+# In[37]:
+com_results_fir
+
+# In[38]:
+# Create a line plot
+fig, ax = plt.subplots(figsize=(10, 4))
+plt.plot(com_results_fir.T['Soft Voting'], label = 'Soft Voting')
+plt.plot(com_results_fir.T['Hard Voting'], label = 'Hard Voting')
+# Add labels and title
+plt.xlabel('Evaluation Metrics')
+plt.ylabel('Scores')
+#plt.title('Voting Evaluation Metrics the First Set')
+plt.ylim(0.67, 0.95)
+plt.legend(loc = 'lower right')
+# Show the plot
+plt.show()
+
+
+# # Second Set of Models
+# In[39]:
+import lightgbm as lgb
+
+# In[40]:
+sec_f1_scores = []
+sec_cohen_kappa = []
+sec_balanced_acc = []
+sec_MCC = []
+sec_Precision = []
+sec_sensitivity = []
+sec_specificity = []
+
+# In[41]:
+# initialize a list to store the models
+from sklearn.discriminant_analysis import LinearDiscriminantAnalysis
+from xgboost import XGBClassifier
+sec_models = [lgb.LGBMClassifier(random_state = 123), 
+              XGBClassifier(random_state = 123),
+              GradientBoostingClassifier(random_state = 123), 
+              RandomForestClassifier(random_state=123),
+              LinearDiscriminantAnalysis()]
+# train and evaluate each model using a for loop
+for i, s_model in enumerate(sec_models):
+    # fit the model on the training data
+    s_model.fit(X_train, y_train)
+    # make predictions on the test data
+    sec_y_pred = s_model.predict(X_test)
+    # Compute sensitivity and specificity
+    tn_sec, fp_sec, fn_sec, tp_sec = confusion_matrix(y_test, sec_y_pred).ravel()
+    sec_sensit = tp_sec / (tp_sec + fn_sec)
+    sec_specif = tn_sec / (tn_sec + fp_sec)
+    # evaluate the models
+    sec_accuracy = accuracy_score(y_test, sec_y_pred)
+    sec_f1 = f1_score(y_test, sec_y_pred)
+    sec_mcc = matthews_corrcoef(y_test, sec_y_pred)
+    sec_bal_acc = balanced_accuracy_score(y_test, sec_y_pred)
+    sec_kappa = cohen_kappa_score(y_test, sec_y_pred)
+    sec_precision = precision_score(y_test, sec_y_pred)
+    # append the results to the lists
+    sec_f1_scores.append(sec_f1)
+    sec_cohen_kappa.append(sec_kappa)
+    sec_balanced_acc.append(sec_bal_acc)
+    sec_MCC.append(sec_mcc)
+    sec_Precision.append(sec_precision)
+    sec_sensitivity.append(sec_sensit)
+    sec_specificity.append(sec_specif)
+
+# In[42]:
+#Confusion Matrix
+from sklearn.metrics import ConfusionMatrixDisplay
+cm_sec = confusion_matrix(y_test, sec_y_pred)
+sns.heatmap(cm_sec, annot=True)
+plt.ylabel ("True Label")
+plt.xlabel ("Predicted Label")
+
+# In[43]:
+# create a dataframe to store the results
+sec_results_df = pd.DataFrame({'Model': ['LightGBM', 'XGBoost', 'GradientBoosting', 
+                                         'RF', 'LDA'],
+                           'F1 Score': sec_f1_scores,
+                         'Cohen kappa': sec_cohen_kappa,
+                        'Balanced Acc': sec_balanced_acc,
+                        'MCC' : sec_MCC,
+                        'Precision': sec_Precision,
+                        'Sensitivity': sec_sensitivity,
+                        'Specificity': sec_specificity})
+
+# In[44]:
+print(sec_results_df.sort_values(by="MCC", ascending=False))
+
+# In[45]:
+sec_results_df.to_csv("General Result for the Second Set of Models.csv")
+
+# In[46]:
+corr_res_sec = sec_results_df.corr()
+corr_res_sec
+corr_res_sec.to_csv("Correlation between the Second metrics.csv")
+
+# # Hard and Soft Classifier for the Second Set of Models
+# Hard Classifier
+# In[47]:
+from sklearn.ensemble import VotingClassifier
+#create a voting classifier with hard voting
+sec_voting_classifier_hard = VotingClassifier(estimators = [('lgb', lgb.LGBMClassifier(random_state = 123)),
+                                                            ('xgb', XGBClassifier(random_state = 123)),
+                                                            ('gra', GradientBoostingClassifier(random_state = 123)), 
+                                                            ('rf', RandomForestClassifier(random_state=123)),
+                                                            ('lda', LinearDiscriminantAnalysis())], 
+                voting='hard', weights = [1,1,0.6,1,0.2])
+#make predictions with the hard voting model
+sec_voting_classifier_hard.fit(X_train, y_train)
+sec_y_pred_vch = sec_voting_classifier_hard.predict(X_test)
+# Compute sensitivity and specificity
+sec_tn_h, sec_fp_h, sec_fn_h, sec_tp_h = confusion_matrix(y_test, sec_y_pred_vch).ravel()
+sec_sensit_h = sec_tp_h / (sec_tp_h + sec_fn_h)
+sec_specif_h = sec_tn_h / (sec_tn_h + sec_fp_h)
+# evaluate the models
+sec_f1_vch = f1_score(y_test, sec_y_pred_vch)
+sec_mcc_vch = matthews_corrcoef(y_test, sec_y_pred_vch)
+sec_bal_acc_vch = balanced_accuracy_score(y_test, sec_y_pred_vch)
+sec_kappa_vch = cohen_kappa_score(y_test, sec_y_pred_vch)
+sec_precision_vch = precision_score(y_test, sec_y_pred_vch)
+
+# In[48]:
+sec_hard_voting_result = pd.DataFrame({
+                        'F1 Score': sec_f1_vch,
+                        'Cohen kappa': sec_kappa_vch,
+                        'Balanced Acc': sec_bal_acc_vch,
+                        'MCC' : sec_mcc_vch,
+                       'Precision': precision_vch,
+                        'Sensitivity': sec_sensit_h,
+                        'Specificity': sec_specif_h}, index = ['Hard Voting'])
+sec_hard_voting_result
+
+# In[49]:
+#Confusion Matrix
+from sklearn.metrics import ConfusionMatrixDisplay
+sec_cm_hard = confusion_matrix(y_test, sec_y_pred_vch)
+sns.heatmap(sec_cm_hard, annot=True)
+plt.ylabel ("True Label")
+plt.xlabel ("Predicted Label")
+
+# In[50]:
+# Create a line plot
+fig, ax = plt.subplots(figsize=(12, 4))
+ax = plt.plot(sec_hard_voting_result.T)
+# Add labels and title
+plt.xlabel('Evaluation_Metrics')
+plt.ylabel('Scores')
+plt.title('Model Performance Metrics for Hard VC for the Second Set')
+# Show the plot
+plt.show()
+
+# Soft Classifier
+# In[51]:
+from sklearn.ensemble import VotingClassifier
+#create a voting classifier with hard voting
+sec_voting_classifier_soft = VotingClassifier(estimators = [('lgb', lgb.LGBMClassifier(random_state = 123)),
+                                                            ('xgb', XGBClassifier(random_state = 123)),
+                                                            ('gra', GradientBoostingClassifier(random_state = 123)), 
+                                                            ('rf', RandomForestClassifier(random_state=123)),
+                                                            ('lda', LinearDiscriminantAnalysis())], 
+                voting='soft', weights = [1,1,0.6,1,0.2])
+#make predictions with the soft voting model
+sec_voting_classifier_soft.fit(X_train, y_train)
+sec_y_pred_vcs = sec_voting_classifier_soft.predict(X_test)
+# Compute sensitivity and specificity
+sec_tn_s, sec_fp_s, sec_fn_s, sec_tp_s = confusion_matrix(y_test, sec_y_pred_vcs).ravel()
+sec_sensit_s = sec_tp_s / (sec_tp_s + sec_fn_s)
+sec_specif_s = sec_tn_s / (sec_tn_s + sec_fp_s)
+# evaluate the classifier
+sec_f1_vcs = f1_score(y_test, sec_y_pred_vcs)
+sec_acc_vcs = accuracy_score(y_test, sec_y_pred_vcs)
+sec_mcc_vcs = matthews_corrcoef(y_test, sec_y_pred_vcs)
+sec_bal_acc_vcs = balanced_accuracy_score(y_test, sec_y_pred_vcs)
+sec_kappa_vcs = cohen_kappa_score(y_test, sec_y_pred_vcs)
+sec_precision_vcs = precision_score(y_test, sec_y_pred_vcs)
+
+# In[52]:
+sec_soft_voting_result = pd.DataFrame({
+                           'F1 Score': sec_f1_vcs,
+                         'Cohen kappa': sec_kappa_vcs,
+                        'Balanced Acc': sec_bal_acc_vcs,
+                        'MCC' : sec_mcc_vcs,
+                        'Precision': sec_precision_vcs,
+                        'Sensitivity': sec_sensit_s,
+                        'Specificity': sec_specif_s},index = ['Soft Voting'])
+sec_soft_voting_result
+
+# In[53]:
+#Confusion Matrix
+from sklearn.metrics import ConfusionMatrixDisplay
+sec_cm_soft = confusion_matrix(y_test, sec_y_pred_vcs)
+sns.heatmap(sec_cm_soft, annot=True)
+plt.ylabel ("True Label")
+plt.xlabel ("Predicted Label")
+
+# In[54]:
+# Create a line plot
+fig, ax = plt.subplots(figsize=(12, 4))
+ax = plt.plot(sec_soft_voting_result.T)
+
+# Add labels and title
+plt.xlabel('Evaluation_Metrics')
+plt.ylabel('Scores')
+plt.title('Model Performance Metrics for Soft VC for the Second Set')
+# Show the plot
+plt.show()
+
+# In[55]:
+com_results_sec = pd.concat([sec_soft_voting_result, sec_hard_voting_result])
+com_results_sec
+
+# In[56]:
+com_results_sec.to_csv("Voting for the Second Models.csv")
+
+# In[57]:
+# Create a line plot
+fig, ax = plt.subplots(figsize=(10, 4))
+plt.plot(com_results_sec.T['Soft Voting'], label = 'Soft Voting')
+plt.plot(com_results_sec.T['Hard Voting'], label = 'Hard Voting')
+# Add labels and title
+plt.xlabel('Evaluation Metrics')
+plt.ylabel('Scores')
+#plt.title('Voting Evaluation Metrics the Second Set')
+plt.ylim(0.76, 0.93)
+plt.legend(loc = 'lower right')
+# Show the plot
+plt.show()
+
+# # COMBINATIONS OF THE TWO SETS OF MODELS
+# In[58]:
+all_models = pd.concat([results_df, sec_results_df]).reset_index(drop = True)# com_results_fir, com_results_sec]).reset_index(drop = True)
+all_models
+
+# In[59]:
+all_models.to_csv('ALL MODELS.csv')
+
+# In[60]:
+fig, ax = plt.subplots(figsize=(12, 5))
+plt.plot(all_models['Model'], all_models['Cohen kappa'], label = 'Cohen kappa', color = 'black')
+plt.plot(all_models['Model'], all_models['Balanced Acc'], label = 'Balanced Accuracy')
+plt.plot(all_models['Model'], all_models['MCC'], label = 'MCC')
+plt.ylim(0.1, 1.0)
+plt.legend(loc = 'lower right')
+
+# In[61]:
+fig, ax = plt.subplots(figsize=(12, 5))
+plt.plot(all_models['Model'], all_models['F1 Score'], label = "F1 Score")
+plt.plot(all_models['Model'], all_models['Precision'], label = 'Precision', color = 'black')
+plt.plot(all_models['Model'], all_models['Sensitivity'], label = 'Sensitivity')
+plt.plot(all_models['Model'], all_models['Specificity'], label = 'Specificity')
+plt.ylim(0.25, 1.0)
+plt.legend(loc = 'lower right')
+
+# # Combining With Hard and Soft Voting Classifiers
+# In[62]:
+name_h = ['Hard Voting (DT, SVM, KNN, LR, GNB)']
+hard_voting_result = pd.DataFrame({'Model':name_h,
+                           'F1 Score': f1_vch,
+                         'Cohen kappa': kappa_vch,
+                        'Balanced Acc': bal_acc_vch,
+                        'MCC' : mcc_vch,
+                        'Precision': precision_vch, 'Sensitivity': sensit_h,
+                        'Specificity': specif_h})
+hard_voting_result
+
+# In[63]:
+name_s = ['Soft Voting (DT, SVM, KNN, LR, GNB)']
+soft_voting_result = pd.DataFrame({'Model': name_s,
+                           'F1 Score': f1_vcs,
+                         'Cohen kappa': kappa_vcs,
+                        'Balanced Acc': bal_acc_vcs,
+                        'MCC' : mcc_vcs,
+                        'Precision': precision_vcs,
+                        'Sensitivity': sensit_s, 
+                        'Specificity': specif_s})
+soft_voting_result
+
+# In[64]:
+voting_first = pd.concat([soft_voting_result, hard_voting_result]).reset_index(drop = True)
+voting_first
+
+# In[65]:
+name_sec_h = ['Hard Voting (LGB, XGBoost, Gradient Boosting, RF, LDA)']
+sec_hard_voting_result = pd.DataFrame({'Model': name_sec_h,
+                        'F1 Score': sec_f1_vch,
+                        'Cohen kappa': sec_kappa_vch,
+                        'Balanced Acc': sec_bal_acc_vch,
+                        'MCC' : sec_mcc_vch,
+                        'Precision': precision_vch,
+                        'Sensitivity': sec_sensit_h,
+                        'Specificity': sec_specif_h})
+sec_hard_voting_result
+
+# In[66]:
+name_sec_s = ['Soft Voting (LGB, XGBoost, Gradient Boosting, RF, LDA)']
+sec_soft_voting_result = pd.DataFrame({'Model': name_sec_s,
+                           'F1 Score': sec_f1_vcs,
+                         'Cohen kappa': sec_kappa_vcs,
+                        'Balanced Acc': sec_bal_acc_vcs,
+                        'MCC' : sec_mcc_vcs,
+                        'Precision': sec_precision_vcs,
+                        'Sensitivity': sec_sensit_s,
+                        'Specificity': sec_specif_s})
+sec_soft_voting_result
+
+# In[67]:
+voting_second = pd.concat([sec_soft_voting_result, sec_hard_voting_result]).reset_index(drop = True)
+voting_second
+
+# In[68]:
+combined_with_has = pd.concat([all_models, voting_first, voting_second]).reset_index(drop = True)
+combined_with_has
+
+# In[69]:
+combined_with_has.to_csv('Combined_with_has.csv')
+
